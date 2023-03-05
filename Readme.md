@@ -1,0 +1,1 @@
+Reference material used: [CloudFormation documentation](https://docs.aws.amazon.com/cloudformation/index.html)

@@ -1,0 +1,18 @@
+[
+  {
+    "ParameterKey": "AMI",
+    "ParameterValue": "ami-0263e4deb427da90e"
+  },
+  {
+    "ParameterKey": "BucketName",
+    "ParameterValue": "alx-udagram"
+  },
+  {
+    "ParameterKey": "LoadBalancerName",
+    "ParameterValue": "udagram"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "udagram"
+  }
+]

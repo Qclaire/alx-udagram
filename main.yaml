@@ -1,0 +1,261 @@
+---
+AWSTemplateFormatVersion: "2010-09-09"
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t3.small
+    AllowedValues:
+      - t3.small
+    Description: EC2 instance type to launch
+  MinSize:
+    Type: Number
+    Default: "2"
+    Description: Minimum number of instances in the Auto Scaling Group
+  MaxSize:
+    Type: Number
+    Default: "4"
+    Description: Maximum number of instances in the Auto Scaling Group
+  BucketName:
+    Type: String
+    Default: "alx-udagram"
+    Description: S3 bucket name where the static content is stored
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: "udagram"
+    Description: Name of an existing EC2 KeyPair to enable SSH access to the instances
+  VpcCIDR:
+    Type: String
+    Default: "10.0.0.0/16"
+  PublicSubnet1CIDR:
+    Type: String
+    Default: "10.0.1.0/24"
+  PublicSubnet2CIDR:
+    Type: String
+    Default: "10.0.2.0/24"
+  PrivateSubnet1CIDR:
+    Type: String
+    Default: "10.0.3.0/24"
+  PrivateSubnet2CIDR:
+    Type: String
+    Default: "10.0.4.0/24"
+  LoadBalancerName:
+    Type: String
+    Description: Name of the load balancer
+    Default: udagram
+  TargetGroupName:
+    Type: String
+    Description: Name of the target group
+    Default: udagram
+  AMI:
+    Type: String
+    Description: AMI ID
+    Default: ami-0263e4deb427da90e
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-VPC"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-IGW"
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PublicRouteTable"
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PrivateRouteTable"
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PublicSubnet1"
+    DependsOn: VPCGatewayAttachment
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PublicSubnet2"
+    DependsOn: VPCGatewayAttachment
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-PrivateSubnet1"
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PrivateSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs ""]
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-Private"
+  # EC2 instance profile to grant S3 permissions to the instances
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref EC2Role
+
+  # IAM role that allows EC2 instances to read from the S3 bucket
+  EC2Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      Policies:
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:Get*
+                Resource: !Sub arn:aws:s3:::${BucketName}/*
+
+  # Security group that allows incoming HTTP traffic from the load balancer
+  WebSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access from load balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+
+  # Load balancer security group that allows incoming HTTP traffic from the internet
+  LoadBalancerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP access to load balancer
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: "0.0.0.0/0"
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref LoadBalancerName
+      Scheme: internet-facing
+      Type: application
+      Subnets:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      SecurityGroups:
+        - !Ref LoadBalancerSecurityGroup
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Ref TargetGroupName
+      Port: 80
+      Protocol: HTTP
+      TargetType: instance
+      VpcId: !Ref VPC
+      HealthCheckIntervalSeconds: 10
+      HealthCheckPath: /index.html
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 3
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+      Matcher:
+        HttpCode: 200-299
+  Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref LoadBalancer
+      Port: 80
+      Protocol: HTTP
+  LaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref AMI
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyName
+      SecurityGroups:
+        - !Ref WebSecurityGroup
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update
+          apt-get -y install apache2 awscli
+          aws s3 cp s3://${BucketName}/index.html /var/www/html/
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 10
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      DesiredCapacity: !Ref MinSize
+      LaunchConfigurationName: !Ref LaunchConfig
+      MaxSize: !Ref MaxSize
+      MinSize: !Ref MinSize
+      VPCZoneIdentifier:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      TargetGroupARNs:
+        - !Ref TargetGroup
+Outputs:
+  LoadBalancerDNS:
+    Description: DNS name of the load balancer
+    Value: !GetAtt LoadBalancer.DNSName
