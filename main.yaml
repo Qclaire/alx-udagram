@@ -17,7 +17,7 @@ Parameters:
     Description: Maximum number of instances in the Auto Scaling Group
   BucketName:
     Type: String
-    Default: "alx-udagram"
+    Default: "alx-udagram-oswald"
     Description: S3 bucket name where the static content is stored
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
@@ -49,7 +49,7 @@ Parameters:
   AMI:
     Type: String
     Description: AMI ID
-    Default: ami-0263e4deb427da90e
+    Default: ami-0cc4e06e6e710cd94
 Resources:
   VPC:
     Type: AWS::EC2::VPC
